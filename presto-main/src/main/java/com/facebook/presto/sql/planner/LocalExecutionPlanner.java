@@ -1027,7 +1027,6 @@ public class LocalExecutionPlanner
                             planNodeId,
                             processor,
                             Lists.transform(rewrittenProjections, forMap(expressionTypes)));
-
                     return new PhysicalOperation(operatorFactory, outputMappings, source);
                 }
             }

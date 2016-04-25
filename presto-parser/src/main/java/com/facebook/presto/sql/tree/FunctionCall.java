@@ -19,7 +19,7 @@ import java.util.Optional;
 
 import static java.util.Objects.requireNonNull;
 
-public class FunctionCall
+public class  FunctionCall
         extends Expression
 {
     private final QualifiedName name;

@@ -35,8 +35,8 @@ import com.facebook.presto.sql.tree.ComparisonExpression;
 import com.facebook.presto.sql.tree.Expression;
 import com.facebook.presto.sql.tree.ExpressionRewriter;
 import com.facebook.presto.sql.tree.ExpressionTreeRewriter;
+import com.facebook.presto.sql.tree.FunctionCall;
 import com.facebook.presto.sql.tree.GenericLiteral;
-import com.facebook.presto.sql.tree.GroupingOperation;
 import com.facebook.presto.sql.tree.LogicalBinaryExpression;
 import com.facebook.presto.sql.tree.NotExpression;
 import com.facebook.presto.sql.tree.NullLiteral;
@@ -160,13 +160,7 @@ public class SimplifyExpressions
         {
             expression = ExpressionTreeRewriter.rewriteWith(new PushDownNegationsExpressionRewriter(), expression);
             expression = ExpressionTreeRewriter.rewriteWith(new ExtractCommonPredicatesExpressionRewriter(), expression, NodeContext.ROOT_NODE);
-            if (expression instanceof GroupingOperation && !isGroupIdNodePresent) {
-                // No GroupIdNode and a GROUPING() operation imply a single grouping, which
-                // means that any columns specified as arguments to GROUPING() will be included
-                // in the group. Hence, re-write the GroupingOperation to a 0 literal.
-                // See SQL:2011:4.16.2.
-                expression = new GenericLiteral("BIGINT", "0");
-            }
+            expression = ExpressionTreeRewriter.rewriteWith(new GroupingOperationToConstant(), expression, new GroupingOperationContext(isGroupIdNodePresent));
             IdentityHashMap<Expression, Type> expressionTypes = getExpressionTypes(session, metadata, sqlParser, types, expression);
             ExpressionInterpreter interpreter = ExpressionInterpreter.expressionOptimizer(expression, metadata, session, expressionTypes);
             return LiteralInterpreter.toExpression(interpreter.optimize(NoOpSymbolResolver.INSTANCE), expressionTypes.get(expression));
@@ -284,6 +278,40 @@ public class SimplifyExpressions
             return collection.stream()
                     .filter(element -> !elementsToRemove.contains(element))
                     .collect(toImmutableList());
+        }
+    }
+
+    private static class GroupingOperationContext
+    {
+        private final boolean isGroupIdNodePresent;
+
+        GroupingOperationContext(boolean isGroupIdNodePresent)
+        {
+            this.isGroupIdNodePresent = isGroupIdNodePresent;
+        }
+
+        public boolean getIsGroupIdNodePresent()
+        {
+            return isGroupIdNodePresent;
+        }
+    }
+
+    private static class GroupingOperationToConstant
+            extends ExpressionRewriter<GroupingOperationContext>
+    {
+        @Override
+        public Expression rewriteFunctionCall(FunctionCall node, GroupingOperationContext context, ExpressionTreeRewriter<GroupingOperationContext> treeRewriter)
+        {
+            if (!context.getIsGroupIdNodePresent() && node.getName().equals("grouping")) {
+                // No GroupIdNode and a GROUPING() operation imply a single grouping, which
+                // means that any columns specified as arguments to GROUPING() will be included
+                // in the group. Hence, re-write the GroupingOperation to a 0 literal.
+                // See SQL:2011:4.16.2.
+                return new GenericLiteral("BIGINT", "0");
+            }
+            else {
+                return node;
+            }
         }
     }
 }
